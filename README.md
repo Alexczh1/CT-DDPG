@@ -7,10 +7,6 @@ Paper: [Deterministic Policy Gradient for Reinforcement Learning with Continuous
 Time and State](https://arxiv.org/pdf/2509.23711) — Ziheng Cheng, Xin Guo, and
 Yufei Zhang.
 
-This repository contains only the CT-DDPG algorithm, its online sequence replay
-buffer, time-conditioned neural networks, a continuous-time Gymnasium wrapper,
-and one GPU training launcher. It does not include the comparison algorithms
-from the original research repository.
 
 ## Method
 
