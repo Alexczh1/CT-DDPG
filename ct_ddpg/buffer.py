@@ -1,176 +1,118 @@
-"""Episode buffer and sequence sampler for online CT-DDPG updates."""
+"""Online episode-sequence replay for CT-DDPG."""
 
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import TypeAlias
+from collections import deque
+from typing import NamedTuple
 
 import numpy as np
 
 
-Step: TypeAlias = tuple[np.ndarray, np.ndarray | None, float, np.ndarray]
+Step = tuple[np.ndarray, np.ndarray | None, float, np.ndarray]
 
 
-@dataclass(frozen=True)
-class SequenceBatch:
+class SequenceBatch(NamedTuple):
     states: np.ndarray
     actions: np.ndarray
     rewards: np.ndarray
     times: np.ndarray
 
 
-@dataclass(frozen=True)
-class TerminalBatch:
+class TerminalBatch(NamedTuple):
     states: np.ndarray
     rewards: np.ndarray
     times: np.ndarray
 
 
-class EpisodeSequenceBuffer:
-    """Circular episode storage that also samples active online trajectories."""
-
-    def __init__(
-        self,
-        max_episodes: int,
-        num_envs: int,
-        rng: np.random.Generator,
-    ) -> None:
-        if max_episodes <= 0 or num_envs <= 0:
-            raise ValueError("max_episodes and num_envs must be positive")
-        self.max_episodes = max_episodes
+class SequenceBuffer:
+    def __init__(self, capacity: int, num_envs: int, rng: np.random.Generator) -> None:
+        self.episodes: deque[list[Step]] = deque(maxlen=capacity)
+        self.terminals: deque[tuple[np.ndarray, float, np.ndarray]] = deque(
+            maxlen=capacity
+        )
         self.num_envs = num_envs
         self.rng = rng
-        self._episodes: list[list[Step]] = []
-        self._terminals: list[tuple[np.ndarray, float, np.ndarray]] = []
-        self._episode_ptr = 0
-        self._terminal_ptr = 0
-        self._active: list[list[Step]] | None = None
-
-    @property
-    def completed_size(self) -> int:
-        return len(self._episodes)
+        self.active: list[list[Step]] = []
 
     def start_rollout(self) -> None:
-        self._active = [[] for _ in range(self.num_envs)]
+        self.active = [[] for _ in range(self.num_envs)]
 
-    def add_step(
+    def add(
         self,
         states: np.ndarray,
         actions: np.ndarray,
         rewards: np.ndarray,
         times: np.ndarray,
     ) -> None:
-        if self._active is None:
-            raise RuntimeError("start_rollout() must be called before add_step()")
-        for index in range(self.num_envs):
-            self._active[index].append(
+        for i in range(self.num_envs):
+            self.active[i].append(
                 (
-                    np.asarray(states[index], dtype=np.float32).copy(),
-                    np.asarray(actions[index], dtype=np.float32).copy(),
-                    float(rewards[index]),
-                    np.asarray(times[index], dtype=np.float32).copy(),
+                    np.asarray(states[i], dtype=np.float32),
+                    np.asarray(actions[i], dtype=np.float32),
+                    float(rewards[i]),
+                    np.asarray(times[i], dtype=np.float32),
                 )
             )
 
-    def finish_rollout(
-        self,
-        final_states: np.ndarray,
-        terminal_rewards: np.ndarray,
-        final_times: np.ndarray,
+    def finish(
+        self, states: np.ndarray, rewards: np.ndarray, times: np.ndarray
     ) -> None:
-        if self._active is None:
-            raise RuntimeError("no active rollout to finish")
-        for index, trajectory in enumerate(self._active):
-            final_state = np.asarray(final_states[index], dtype=np.float32).copy()
-            final_time = np.asarray(final_times[index], dtype=np.float32).copy()
-            terminal_reward = float(terminal_rewards[index])
+        for i, episode in enumerate(self.active):
+            terminal = (
+                np.asarray(states[i], dtype=np.float32),
+                float(rewards[i]),
+                np.asarray(times[i], dtype=np.float32),
+            )
+            episode.append((terminal[0], None, terminal[1], terminal[2]))
+            self.episodes.append(episode)
+            self.terminals.append(terminal)
+        self.active = []
 
-            # This terminal record anchors V at the horizon. Sequence sampling
-            # uses it only as an exclusive endpoint, matching the source method.
-            trajectory.append((final_state, None, terminal_reward, final_time))
-            self._append_episode(trajectory)
-            self._append_terminal((final_state, terminal_reward, final_time))
-        self._active = None
-
-    def sample_sequences(
-        self,
-        batch_size: int,
-        min_length: int,
-        max_length: int,
+    def sample(
+        self, batch_size: int, min_sequence_length: int, max_sequence_length: int
     ) -> SequenceBatch:
-        if batch_size <= 0 or min_length <= 0 or max_length < min_length:
-            raise ValueError("invalid sequence sampling arguments")
-
-        candidates = list(self._episodes)
-        if self._active is not None:
-            candidates.extend(self._active)
-        eligible = [
-            trajectory for trajectory in candidates if len(trajectory) > min_length
+        candidates = [
+            episode
+            for episode in [*self.episodes, *self.active]
+            if len(episode) > min_sequence_length
         ]
-        if not eligible:
+        if not candidates:
             raise RuntimeError("no trajectory is long enough to sample")
 
-        selected = [
-            eligible[i] for i in self.rng.integers(0, len(eligible), batch_size)
+        episodes = [
+            candidates[i] for i in self.rng.integers(len(candidates), size=batch_size)
         ]
-        end_indices = np.asarray(
-            [self.rng.integers(min_length, len(trajectory)) for trajectory in selected]
+        ends = np.array(
+            [
+                self.rng.integers(min_sequence_length, len(episode))
+                for episode in episodes
+            ]
         )
-        sampled_length = int(self.rng.integers(min_length, int(end_indices.min()) + 1))
-        sampled_length = min(sampled_length, max_length)
-
+        length = min(
+            int(self.rng.integers(min_sequence_length, ends.min() + 1)),
+            max_sequence_length,
+        )
         sequences = [
-            trajectory[end - sampled_length : end]
-            for trajectory, end in zip(selected, end_indices)
+            episode[end - length : end] for episode, end in zip(episodes, ends)
         ]
-        if any(step[1] is None for sequence in sequences for step in sequence):
-            raise RuntimeError("terminal actions must not appear in training sequences")
 
         return SequenceBatch(
-            states=np.asarray(
-                [[step[0] for step in sequence] for sequence in sequences],
-                dtype=np.float32,
-            ),
-            actions=np.asarray(
-                [[step[1] for step in sequence] for sequence in sequences],
-                dtype=np.float32,
-            ),
-            rewards=np.asarray(
-                [[step[2] for step in sequence] for sequence in sequences],
-                dtype=np.float32,
-            ),
-            times=np.asarray(
-                [[step[3] for step in sequence] for sequence in sequences],
-                dtype=np.float32,
-            ),
+            *[
+                np.asarray(
+                    [[step[field] for step in sequence] for sequence in sequences],
+                    dtype=np.float32,
+                )
+                for field in range(4)
+            ]
         )
 
     def sample_terminals(self, batch_size: int) -> TerminalBatch:
-        if batch_size <= 0:
-            raise ValueError("batch_size must be positive")
-        if not self._terminals:
-            raise RuntimeError("no terminal states are available")
-        sample_size = min(batch_size, len(self._terminals))
-        selected = [
-            self._terminals[i]
-            for i in self.rng.integers(0, len(self._terminals), sample_size)
+        count = min(batch_size, len(self.terminals))
+        samples = [
+            self.terminals[i]
+            for i in self.rng.integers(len(self.terminals), size=count)
         ]
         return TerminalBatch(
-            states=np.asarray([item[0] for item in selected], dtype=np.float32),
-            rewards=np.asarray([item[1] for item in selected], dtype=np.float32),
-            times=np.asarray([item[2] for item in selected], dtype=np.float32),
+            *[
+                np.asarray([sample[field] for sample in samples], dtype=np.float32)
+                for field in range(3)
+            ]
         )
-
-    def _append_episode(self, trajectory: list[Step]) -> None:
-        if len(self._episodes) < self.max_episodes:
-            self._episodes.append(trajectory)
-        else:
-            self._episodes[self._episode_ptr] = trajectory
-        self._episode_ptr = (self._episode_ptr + 1) % self.max_episodes
-
-    def _append_terminal(self, terminal: tuple[np.ndarray, float, np.ndarray]) -> None:
-        if len(self._terminals) < self.max_episodes:
-            self._terminals.append(terminal)
-        else:
-            self._terminals[self._terminal_ptr] = terminal
-        self._terminal_ptr = (self._terminal_ptr + 1) % self.max_episodes

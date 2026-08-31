@@ -1,13 +1,5 @@
-"""Continuous-time DDPG with online sequence updates."""
+"""CT-DDPG."""
 
-from .algorithm import (
-    CTDDPGConfig,
-    CTDDPG,
-    NetworkConfig,
-)
+from .algorithm import CTDDPG, CTDDPGConfig
 
-__all__ = [
-    "CTDDPG",
-    "CTDDPGConfig",
-    "NetworkConfig",
-]
+__all__ = ["CTDDPG", "CTDDPGConfig"]
