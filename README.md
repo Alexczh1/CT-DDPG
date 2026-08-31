@@ -17,10 +17,6 @@ action-value rate `q`. The centered rate is
 q_centered(s, a, t) = q(s, a, t) - q(s, pi(s, t), t).
 ```
 
-Following the original `DDPG_continuous_online_seq` implementation, a sampled
-sequence contains `L` stored items and contributes `L - 1` transitions to the
-critic target:
-
 ```text
 V(s_0,t_0) = sum_{k=0}^{L-2} gamma^(k h)
              [r_k - q_centered(s_k,a_k,t_k)] h
@@ -34,11 +30,6 @@ to every network through sine and cosine features.
 Replay sampling also preserves the source behavior: trajectory indices are
 drawn before short active trajectories are discarded, so batches at the start
 of an episode can contain fewer than the requested number of sequences.
-
-> **Implementation note:** the source implementation treats `0.8` as a discount
-> factor and applies `gamma ** h`. This behavior is intentionally preserved. It
-> corresponds to the exponential rate `-log(gamma)`, rather than applying
-> `exp(-0.8 h)` directly.
 
 ## Installation
 
