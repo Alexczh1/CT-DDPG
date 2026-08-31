@@ -1,4 +1,4 @@
-"""Minimal implementation of ``DDPG_continuous_online_seq``.
+"""Minimal implementation of CT-DDPG.
 
 The critic is learned from short trajectory sequences through a continuous-time
 martingale residual. The actor maximizes the learned advantage-rate network.
@@ -89,7 +89,7 @@ class CTDDPGConfig:
             raise ValueError("constraint_weight cannot be negative")
 
 
-class DDPGContinuousOnlineSequence:
+class CTDDPG:
     """Continuous-time deterministic actor-critic with online sequence replay."""
 
     def __init__(
@@ -405,7 +405,7 @@ class DDPGContinuousOnlineSequence:
         if self.output_dir is None:
             return
         checkpoint = {
-            "algorithm": "DDPG_continuous_online_seq",
+            "algorithm": "CT-DDPG",
             "config": asdict(self.config),
             "episode": episode,
             "vector_steps": vector_steps,
@@ -435,7 +435,3 @@ class DDPGContinuousOnlineSequence:
             self.value.parameters(), self.value_target.parameters()
         ):
             target_parameter.mul_(1.0 - tau).add_(parameter, alpha=tau)
-
-
-# Compatibility alias for the name used in the research code.
-DDPG_continuous_online_seq = DDPGContinuousOnlineSequence

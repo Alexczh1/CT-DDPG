@@ -2,14 +2,12 @@
 
 from .algorithm import (
     CTDDPGConfig,
-    DDPG_continuous_online_seq,
-    DDPGContinuousOnlineSequence,
+    CTDDPG,
     NetworkConfig,
 )
 
 __all__ = [
+    "CTDDPG",
     "CTDDPGConfig",
-    "DDPG_continuous_online_seq",
-    "DDPGContinuousOnlineSequence",
     "NetworkConfig",
 ]

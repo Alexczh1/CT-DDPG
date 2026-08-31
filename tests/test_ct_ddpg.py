@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 
-from ct_ddpg import CTDDPGConfig, DDPGContinuousOnlineSequence, NetworkConfig
+from ct_ddpg import CTDDPG, CTDDPGConfig, NetworkConfig
 from ct_ddpg.buffer import EpisodeSequenceBuffer, SequenceBatch, TerminalBatch
 
 
@@ -59,7 +59,7 @@ class CTDDPGTests(unittest.TestCase):
             q_network=network,
         )
         env = FakeVectorEnv()
-        algorithm = DDPGContinuousOnlineSequence(env, env, "cpu", config, seed=3)
+        algorithm = CTDDPG(env, env, "cpu", config, seed=3)
         rng = np.random.default_rng(3)
         batch = SequenceBatch(
             states=rng.normal(size=(4, 3, 3)).astype(np.float32),

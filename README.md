@@ -1,8 +1,7 @@
 # CT-DDPG
 
-CT-DDPG is a minimal implementation of the continuous-time deterministic
-actor-critic algorithm named `DDPG_continuous_online_seq` in the original
-research code. This repository contains that algorithm only, together with a
+CT-DDPG is a minimal implementation of a continuous-time deterministic
+actor-critic algorithm. This repository contains CT-DDPG only, together with a
 Gymnasium `HalfCheetah-v5` training example.
 
 ## What is different from standard DDPG?
@@ -38,9 +37,6 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
-
-`requirement.txt` is also provided as a compatibility alias for the requested
-filename; it includes `requirements.txt`.
 
 ## Run HalfCheetah
 

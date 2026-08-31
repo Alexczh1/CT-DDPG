@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ct_ddpg import CTDDPGConfig, DDPGContinuousOnlineSequence, NetworkConfig
+from ct_ddpg import CTDDPG, CTDDPGConfig, NetworkConfig
 from ct_ddpg.envs import make_halfcheetah_vector_env
 
 
@@ -103,7 +103,7 @@ def main() -> None:
 
     output.mkdir(parents=True)
     metadata = {
-        "algorithm": "DDPG_continuous_online_seq",
+        "algorithm": "CT-DDPG",
         "environment": "HalfCheetah-v5",
         "device": str(device),
         "arguments": {
@@ -121,7 +121,7 @@ def main() -> None:
         args.eval_envs, args.dt, args.horizon, args.force_noise_std
     )
     try:
-        algorithm = DDPGContinuousOnlineSequence(
+        algorithm = CTDDPG(
             train_env,
             eval_env,
             device,
