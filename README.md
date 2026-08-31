@@ -3,13 +3,14 @@
 A minimal implementation of CT-DDPG and a Gymnasium `HalfCheetah-v5` example.
 
 CT-DDPG learns a time-conditioned deterministic policy `pi`, value function
-`V`, and continuous-time action-value rate `q`. For a sampled trajectory of
-`L` transitions, the critic fits
+`V`, and continuous-time action-value rate `q`. Matching the original
+`DDPG_continuous_online_seq` implementation, a sampled sequence contains `L`
+stored items and contributes `L-1` transitions to the critic target:
 
 ```text
-V(s_0,t_0) = sum_{k=0}^{L-1} exp(-beta k dt)
+V(s_0,t_0) = sum_{k=0}^{L-2} gamma^(k dt)
              [r_k - q_centered(s_k,a_k,t_k)] dt
-             + exp(-beta L dt) V_target(s_L,t_L),
+             + gamma^((L-1)dt) V_target(s_{L-1},t_{L-1}),
 ```
 
 where `q_centered(s,a,t) = q(s,a,t) - q(s,pi(s,t),t)`. A terminal value loss
@@ -39,10 +40,11 @@ CUDA_VISIBLE_DEVICES=0 ./run_gpu.sh 42 runs/halfcheetah-paper-seed42
 
 The launcher verifies CUDA availability and refuses to reuse an output path.
 
-## Paper hyperparameters
+## Training hyperparameters
 
-The paper-specified defaults and GPU launcher follow Section 5.2 of the
-[CT-DDPG paper](https://arxiv.org/pdf/2509.23711):
+The GPU launcher uses the Section 5.2 settings from the
+[CT-DDPG paper](https://arxiv.org/pdf/2509.23711), except that replay and
+discounting deliberately retain the previous repository's implementation:
 
 | Setting | HalfCheetah value |
 |---|---:|
@@ -53,10 +55,10 @@ The paper-specified defaults and GPU launcher follow Section 5.2 of the
 | Learning rate | `3e-4` |
 | Batch size | 256 |
 | Update frequency `m` | 1 |
-| Discount rate `beta` | 0.8, applied as `exp(-beta * dt)` |
+| Discount factor `gamma` | 0.8, applied as `gamma ** dt` |
 | Soft target update `tau` | 0.005 |
 | Terminal constraint weight `alpha` | 0.002 |
-| Trajectory length `L` | Uniform integer in `[2, 10]` |
+| Stored sequence length `L` | Sampled from 2 through 10 |
 | Exploration noise standard deviation | 0.1 |
 | HalfCheetah step size | 0.05 |
 | Dynamic noise standard deviation | 0.0 |
