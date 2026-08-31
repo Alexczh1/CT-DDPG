@@ -46,6 +46,8 @@ class CTDDPGTests(unittest.TestCase):
                 config.hidden_dim,
                 config.layers,
                 config.learning_rate,
+                config.lr_decay_steps,
+                config.lr_decay_gamma,
                 config.batch_size,
                 config.update_frequency,
                 config.discount_factor,
@@ -55,8 +57,43 @@ class CTDDPGTests(unittest.TestCase):
                 config.max_sequence_length,
                 config.exploration_noise,
             ),
-            (400, 2, 3e-4, 256, 1, 0.8, 0.005, 0.002, 2, 10, 0.1),
+            (400, 2, 3e-4, 80_000, 0.8, 256, 1, 0.8, 0.005, 0.002, 2, 10, 0.1),
         )
+
+    def test_learning_rate_decay(self) -> None:
+        torch.manual_seed(0)
+        config = CTDDPGConfig(
+            batch_size=2,
+            hidden_dim=4,
+            layers=0,
+            lr_decay_steps=2,
+            lr_decay_gamma=0.8,
+        )
+        algorithm = CTDDPG(FakeVectorEnv(), FakeVectorEnv(), "cpu", config)
+        rng = np.random.default_rng(0)
+        sequences = SequenceBatch(
+            rng.normal(size=(2, 2, 3)).astype(np.float32),
+            rng.uniform(-1, 1, size=(2, 2, 2)).astype(np.float32),
+            rng.normal(size=(2, 2)).astype(np.float32),
+            np.zeros((2, 2, 1), dtype=np.float32),
+        )
+        terminals = TerminalBatch(
+            rng.normal(size=(2, 3)).astype(np.float32),
+            np.zeros(2, dtype=np.float32),
+            np.ones((2, 1), dtype=np.float32),
+        )
+
+        for _ in range(2):
+            algorithm.update_critic(sequences, terminals)
+            algorithm.update_policy(sequences)
+
+        expected = config.learning_rate * config.lr_decay_gamma
+        for optimizer in (
+            algorithm.policy_optimizer,
+            algorithm.value_optimizer,
+            algorithm.q_optimizer,
+        ):
+            self.assertAlmostEqual(optimizer.param_groups[0]["lr"], expected)
 
     def test_updates(self) -> None:
         torch.manual_seed(0)

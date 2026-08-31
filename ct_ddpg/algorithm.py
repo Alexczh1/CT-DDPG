@@ -25,6 +25,8 @@ class CTDDPGConfig:
     update_frequency: int = 1
     exploration_noise: float = 0.1
     learning_rate: float = 3e-4
+    lr_decay_steps: int = 80_000
+    lr_decay_gamma: float = 0.8
     tau: float = 0.005
     terminal_loss_weight: float = 0.002
     hidden_dim: int = 400
@@ -41,10 +43,15 @@ class CTDDPGConfig:
                 self.batch_size,
                 self.warmup_episodes,
                 self.update_frequency,
+                self.lr_decay_steps,
             )
             <= 0
         ):
-            raise ValueError("buffer, batch, warmup, and update sizes must be positive")
+            raise ValueError(
+                "buffer, batch, warmup, update, and LR decay sizes must be positive"
+            )
+        if not 0 < self.lr_decay_gamma <= 1:
+            raise ValueError("lr_decay_gamma must be in (0, 1]")
 
 
 class CTDDPG:
@@ -87,6 +94,21 @@ class CTDDPG:
         )
         self.q_optimizer = torch.optim.Adam(
             self.q_rate.parameters(), lr=config.learning_rate
+        )
+        self.policy_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.policy_optimizer,
+            step_size=config.lr_decay_steps,
+            gamma=config.lr_decay_gamma,
+        )
+        self.value_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.value_optimizer,
+            step_size=config.lr_decay_steps,
+            gamma=config.lr_decay_gamma,
+        )
+        self.q_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.q_optimizer,
+            step_size=config.lr_decay_steps,
+            gamma=config.lr_decay_gamma,
         )
 
     @torch.no_grad()
@@ -136,6 +158,8 @@ class CTDDPG:
         loss.backward()
         self.q_optimizer.step()
         self.value_optimizer.step()
+        self.q_scheduler.step()
+        self.value_scheduler.step()
 
         with torch.no_grad():
             for value_parameter, target_parameter in zip(
@@ -160,6 +184,7 @@ class CTDDPG:
         self.policy_optimizer.zero_grad(set_to_none=True)
         loss.backward()
         self.policy_optimizer.step()
+        self.policy_scheduler.step()
         for parameter in self.q_rate.parameters():
             parameter.requires_grad_(True)
         return loss.item()

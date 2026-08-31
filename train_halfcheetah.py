@@ -30,6 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-sequence-length", type=int, default=10)
     parser.add_argument("--warmup-episodes", type=int, default=5)
     parser.add_argument("--hidden-dim", type=int, default=400)
+    parser.add_argument("--lr-decay-steps", type=int, default=80_000)
+    parser.add_argument("--lr-decay-gamma", type=float, default=0.8)
     parser.add_argument("--force-noise-std", type=float, default=0.0)
     return parser.parse_args()
 
@@ -58,6 +60,8 @@ def main() -> None:
         max_sequence_length=args.max_sequence_length,
         warmup_episodes=args.warmup_episodes,
         hidden_dim=args.hidden_dim,
+        lr_decay_steps=args.lr_decay_steps,
+        lr_decay_gamma=args.lr_decay_gamma,
     )
 
     output.mkdir(parents=True)

@@ -34,4 +34,6 @@ exec python train_halfcheetah.py \
   --max-sequence-length 10 \
   --warmup-episodes 5 \
   --hidden-dim 400 \
+  --lr-decay-steps 80000 \
+  --lr-decay-gamma 0.8 \
   --force-noise-std 0.0

@@ -84,8 +84,8 @@ above. The main experiment settings are:
 | Dynamic force noise | 0.0 |
 | Exploration-action noise | 0.1 |
 | Network architecture | 3 linear layers (2 hidden), width 400, ReLU |
-| Optimizer | Adam, learning rate `3e-4` |
-| Weight decay / LR schedule | None / none |
+| Optimizer | Adam, initial learning rate `3e-4`, no weight decay |
+| LR schedule | Multiply by `0.8` every 80,000 optimizer updates |
 | Batch size | 256 |
 | Update frequency | 1 update per environment step |
 | Stored sequence length | 2–10 |
