@@ -39,6 +39,19 @@ class CTDDPGTests(unittest.TestCase):
         self.assertEqual(lengths, {2, 3})
         self.assertEqual(buffer.sample_terminals(8).states.shape, (2, 3))
 
+        buffer.start_rollout()
+        buffer.add(
+            np.zeros((2, 3)),
+            np.zeros((2, 2)),
+            np.zeros(2),
+            np.zeros((2, 1)),
+        )
+        early_batch = buffer.sample(
+            128, min_sequence_length=2, max_sequence_length=3
+        )
+        self.assertGreater(early_batch.states.shape[0], 0)
+        self.assertLess(early_batch.states.shape[0], 128)
+
     def test_training_hyperparameters(self) -> None:
         config = CTDDPGConfig()
         self.assertEqual(

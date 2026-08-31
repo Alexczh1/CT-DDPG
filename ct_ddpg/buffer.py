@@ -69,17 +69,16 @@ class SequenceBuffer:
     def sample(
         self, batch_size: int, min_sequence_length: int, max_sequence_length: int
     ) -> SequenceBatch:
-        candidates = [
-            episode
-            for episode in [*self.episodes, *self.active]
-            if len(episode) > min_sequence_length
-        ]
-        if not candidates:
+        pool = [*self.episodes, *self.active]
+        if not pool:
             raise RuntimeError("no trajectory is long enough to sample")
 
+        indices = self.rng.integers(len(pool), size=batch_size)
         episodes = [
-            candidates[i] for i in self.rng.integers(len(candidates), size=batch_size)
+            pool[i] for i in indices if len(pool[i]) > min_sequence_length
         ]
+        if not episodes:
+            raise RuntimeError("sampled trajectories are too short")
         ends = np.asarray(
             [
                 self.rng.integers(min_sequence_length, len(episode))
