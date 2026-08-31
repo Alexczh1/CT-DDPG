@@ -66,10 +66,11 @@ def main() -> None:
             {
                 "algorithm": "CT-DDPG",
                 "environment": "HalfCheetah-v5",
-                "seed": args.seed,
-                "device": device,
-                "horizon": args.horizon,
-                "num_envs": args.num_envs,
+                "arguments": {
+                    key: str(value) if isinstance(value, Path) else value
+                    for key, value in vars(args).items()
+                },
+                "resolved_device": device,
                 "config": asdict(config),
             },
             indent=2,

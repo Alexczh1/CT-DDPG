@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import gymnasium as gym
@@ -25,14 +26,39 @@ class CTDDPGTests(unittest.TestCase):
                 np.full((2, 3), step),
                 np.full((2, 2), step),
                 np.full(2, step),
+                np.full((2, 3), step + 1),
                 np.full((2, 1), step / 4),
+                np.full((2, 1), (step + 1) / 4),
             )
         buffer.finish(np.ones((2, 3)), np.zeros(2), np.ones((2, 1)))
 
-        batch = buffer.sample(5, min_sequence_length=2, max_sequence_length=3)
-        self.assertEqual(batch.states.shape[0], 5)
-        self.assertTrue(2 <= batch.states.shape[1] <= 3)
+        lengths = set()
+        for _ in range(20):
+            batch = buffer.sample(5, min_sequence_length=2, max_sequence_length=3)
+            lengths.add(batch.actions.shape[1])
+            self.assertEqual(batch.states.shape[1], batch.actions.shape[1] + 1)
+            self.assertEqual(batch.times.shape[1], batch.actions.shape[1] + 1)
+        self.assertEqual(lengths, {2, 3})
         self.assertEqual(buffer.sample_terminals(8).states.shape, (2, 3))
+
+    def test_paper_hyperparameters(self) -> None:
+        config = CTDDPGConfig()
+        self.assertEqual(
+            (
+                config.hidden_dim,
+                config.layers,
+                config.learning_rate,
+                config.batch_size,
+                config.update_frequency,
+                config.discount_rate,
+                config.tau,
+                config.terminal_loss_weight,
+                config.min_sequence_length,
+                config.max_sequence_length,
+                config.exploration_noise,
+            ),
+            (400, 2, 3e-4, 256, 1, 0.8, 0.005, 0.002, 2, 10, 0.1),
+        )
 
     def test_updates(self) -> None:
         torch.manual_seed(0)
@@ -40,11 +66,12 @@ class CTDDPGTests(unittest.TestCase):
         algorithm = CTDDPG(FakeVectorEnv(), FakeVectorEnv(), "cpu", config)
         rng = np.random.default_rng(0)
         sequences = SequenceBatch(
-            rng.normal(size=(4, 3, 3)).astype(np.float32),
+            rng.normal(size=(4, 4, 3)).astype(np.float32),
             rng.uniform(-1, 1, size=(4, 3, 2)).astype(np.float32),
             rng.normal(size=(4, 3)).astype(np.float32),
             np.tile(
-                np.array([0, 0.1, 0.2], dtype=np.float32)[None, :, None], (4, 1, 1)
+                np.array([0, 0.1, 0.2, 0.3], dtype=np.float32)[None, :, None],
+                (4, 1, 1),
             ),
         )
         terminals = TerminalBatch(
@@ -57,6 +84,29 @@ class CTDDPGTests(unittest.TestCase):
         policy_loss = algorithm.update_policy(sequences)
         self.assertTrue(all(np.isfinite(value) for value in losses.values()))
         self.assertTrue(np.isfinite(policy_loss))
+
+    def test_continuous_discount_rate(self) -> None:
+        config = CTDDPGConfig(batch_size=2, hidden_dim=4, layers=0)
+        algorithm = CTDDPG(FakeVectorEnv(), FakeVectorEnv(), "cpu", config)
+        for network in (algorithm.q_rate, algorithm.value, algorithm.target_value):
+            for parameter in network.parameters():
+                parameter.data.zero_()
+        algorithm.target_value.net[-1].bias.data.fill_(1)
+
+        sequences = SequenceBatch(
+            np.zeros((2, 3, 3), dtype=np.float32),
+            np.zeros((2, 2, 2), dtype=np.float32),
+            np.zeros((2, 2), dtype=np.float32),
+            np.zeros((2, 3, 1), dtype=np.float32),
+        )
+        terminals = TerminalBatch(
+            np.zeros((2, 3), dtype=np.float32),
+            np.zeros(2, dtype=np.float32),
+            np.ones((2, 1), dtype=np.float32),
+        )
+        losses = algorithm.update_critic(sequences, terminals)
+        expected = math.exp(-2 * config.discount_rate * config.dt * 2)
+        self.assertAlmostEqual(losses["martingale_loss"], expected, places=6)
 
 
 if __name__ == "__main__":

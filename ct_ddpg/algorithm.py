@@ -16,28 +16,35 @@ from .networks import Policy, QRate, Value
 @dataclass(frozen=True)
 class CTDDPGConfig:
     dt: float = 0.05
-    discount_factor: float = 0.8
+    discount_rate: float = 0.8
     buffer_size: int = 10_000
     batch_size: int = 256
     min_sequence_length: int = 2
     max_sequence_length: int = 10
     warmup_episodes: int = 5
+    update_frequency: int = 1
     exploration_noise: float = 0.1
     learning_rate: float = 3e-4
-    lr_decay_step: int = 80_000
-    lr_decay_gamma: float = 0.8
     tau: float = 0.005
-    terminal_loss_weight: float = 0.001
+    terminal_loss_weight: float = 0.002
     hidden_dim: int = 400
     layers: int = 2
 
     def __post_init__(self) -> None:
-        if self.dt <= 0 or not 0 < self.discount_factor <= 1:
-            raise ValueError("dt and discount_factor must be positive")
+        if self.dt <= 0 or self.discount_rate < 0:
+            raise ValueError("dt must be positive and discount_rate non-negative")
         if not 2 <= self.min_sequence_length <= self.max_sequence_length:
             raise ValueError("require 2 <= min_sequence_length <= max_sequence_length")
-        if min(self.buffer_size, self.batch_size, self.warmup_episodes) <= 0:
-            raise ValueError("buffer, batch, and warmup sizes must be positive")
+        if (
+            min(
+                self.buffer_size,
+                self.batch_size,
+                self.warmup_episodes,
+                self.update_frequency,
+            )
+            <= 0
+        ):
+            raise ValueError("buffer, batch, warmup, and update sizes must be positive")
 
 
 class CTDDPG:
@@ -81,18 +88,6 @@ class CTDDPG:
         self.q_optimizer = torch.optim.Adam(
             self.q_rate.parameters(), lr=config.learning_rate
         )
-        self.schedulers = [
-            torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=config.lr_decay_step,
-                gamma=config.lr_decay_gamma,
-            )
-            for optimizer in (
-                self.policy_optimizer,
-                self.value_optimizer,
-                self.q_optimizer,
-            )
-        ]
 
     @torch.no_grad()
     def act(
@@ -110,23 +105,29 @@ class CTDDPG:
     ) -> dict[str, float]:
         states, actions, rewards, times = map(self.tensor, sequences)
 
+        current_states, current_times = states[:, :-1], times[:, :-1]
         with torch.no_grad():
-            policy_actions = self.policy(states, times)
-        centered_q = self.q_rate(states, actions, times).squeeze(-1) - self.q_rate(
-            states, policy_actions, times
-        ).squeeze(-1)
+            policy_actions = self.policy(current_states, current_times)
+        centered_q = self.q_rate(current_states, actions, current_times).squeeze(
+            -1
+        ) - self.q_rate(current_states, policy_actions, current_times).squeeze(-1)
 
-        intervals = rewards.shape[1] - 1
-        discounts = self.config.discount_factor ** (
-            self.config.dt * torch.arange(intervals, device=self.device)
+        intervals = rewards.shape[1]
+        discounts = torch.exp(
+            -self.config.discount_rate
+            * self.config.dt
+            * torch.arange(intervals, device=self.device)
         )
-        running_return = (
-            (rewards[:, :-1] - centered_q[:, :-1]) * self.config.dt * discounts
-        ).sum(-1)
+        running_return = ((rewards - centered_q) * self.config.dt * discounts).sum(-1)
 
         with torch.no_grad():
             bootstrap = self.target_value(states[:, -1], times[:, -1]).squeeze(-1)
-            bootstrap *= self.config.discount_factor ** (self.config.dt * intervals)
+            bootstrap *= torch.exp(
+                torch.tensor(
+                    -self.config.discount_rate * self.config.dt * intervals,
+                    device=self.device,
+                )
+            )
         value = self.value(states[:, 0], times[:, 0]).squeeze(-1)
         martingale_loss = F.mse_loss(value, running_return + bootstrap)
 
@@ -155,7 +156,8 @@ class CTDDPG:
         }
 
     def update_policy(self, sequences: SequenceBatch) -> float:
-        states, times = self.tensor(sequences.states), self.tensor(sequences.times)
+        states = self.tensor(sequences.states[:, 0])
+        times = self.tensor(sequences.times[:, 0])
         for parameter in self.q_rate.parameters():
             parameter.requires_grad_(False)
         loss = (
@@ -189,12 +191,16 @@ class CTDDPG:
                 next_states, rewards, terminated, truncated, info = self.env.step(
                     actions
                 )
-                buffer.add(states, actions, rewards, times)
-                states, times = next_states, info["time"]
+                next_times = info["time"]
+                buffer.add(states, actions, rewards, next_states, times, next_times)
+                states, times = next_states, next_times
                 done = bool(np.all(terminated | truncated))
                 vector_steps += 1
 
-                if len(buffer.episodes) >= self.config.warmup_episodes:
+                if (
+                    len(buffer.episodes) >= self.config.warmup_episodes
+                    and vector_steps % self.config.update_frequency == 0
+                ):
                     critic_batch = buffer.sample(
                         self.config.batch_size,
                         self.config.min_sequence_length,
@@ -203,12 +209,8 @@ class CTDDPG:
                     losses = self.update_critic(
                         critic_batch, buffer.sample_terminals(self.config.batch_size)
                     )
-                    policy_batch = buffer.sample(
-                        self.config.batch_size, 1, self.config.max_sequence_length
-                    )
+                    policy_batch = buffer.sample(self.config.batch_size, 1, 1)
                     losses["policy_loss"] = self.update_policy(policy_batch)
-                    for scheduler in self.schedulers:
-                        scheduler.step()
                     updates += 1
 
             buffer.finish(states, np.zeros(self.env.num_envs), times)

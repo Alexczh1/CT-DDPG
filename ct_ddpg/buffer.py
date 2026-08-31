@@ -1,4 +1,4 @@
-"""Online episode-sequence replay for CT-DDPG."""
+"""Online trajectory replay for CT-DDPG."""
 
 from collections import deque
 from typing import NamedTuple
@@ -6,7 +6,7 @@ from typing import NamedTuple
 import numpy as np
 
 
-Step = tuple[np.ndarray, np.ndarray | None, float, np.ndarray]
+Transition = tuple[np.ndarray, np.ndarray, float, np.ndarray, np.ndarray, np.ndarray]
 
 
 class SequenceBatch(NamedTuple):
@@ -24,13 +24,13 @@ class TerminalBatch(NamedTuple):
 
 class SequenceBuffer:
     def __init__(self, capacity: int, num_envs: int, rng: np.random.Generator) -> None:
-        self.episodes: deque[list[Step]] = deque(maxlen=capacity)
+        self.episodes: deque[list[Transition]] = deque(maxlen=capacity)
         self.terminals: deque[tuple[np.ndarray, float, np.ndarray]] = deque(
             maxlen=capacity
         )
         self.num_envs = num_envs
         self.rng = rng
-        self.active: list[list[Step]] = []
+        self.active: list[list[Transition]] = []
 
     def start_rollout(self) -> None:
         self.active = [[] for _ in range(self.num_envs)]
@@ -40,7 +40,9 @@ class SequenceBuffer:
         states: np.ndarray,
         actions: np.ndarray,
         rewards: np.ndarray,
+        next_states: np.ndarray,
         times: np.ndarray,
+        next_times: np.ndarray,
     ) -> None:
         for i in range(self.num_envs):
             self.active[i].append(
@@ -48,60 +50,61 @@ class SequenceBuffer:
                     np.asarray(states[i], dtype=np.float32),
                     np.asarray(actions[i], dtype=np.float32),
                     float(rewards[i]),
+                    np.asarray(next_states[i], dtype=np.float32),
                     np.asarray(times[i], dtype=np.float32),
+                    np.asarray(next_times[i], dtype=np.float32),
                 )
             )
 
     def finish(
         self, states: np.ndarray, rewards: np.ndarray, times: np.ndarray
     ) -> None:
-        for i, episode in enumerate(self.active):
-            terminal = (
+        self.episodes.extend(self.active)
+        self.terminals.extend(
+            (
                 np.asarray(states[i], dtype=np.float32),
                 float(rewards[i]),
                 np.asarray(times[i], dtype=np.float32),
             )
-            episode.append((terminal[0], None, terminal[1], terminal[2]))
-            self.episodes.append(episode)
-            self.terminals.append(terminal)
+            for i in range(self.num_envs)
+        )
         self.active = []
 
     def sample(
         self, batch_size: int, min_sequence_length: int, max_sequence_length: int
     ) -> SequenceBatch:
+        length = int(self.rng.integers(min_sequence_length, max_sequence_length + 1))
         candidates = [
             episode
             for episode in [*self.episodes, *self.active]
-            if len(episode) > min_sequence_length
+            if len(episode) >= length
         ]
         if not candidates:
-            raise RuntimeError("no trajectory is long enough to sample")
+            raise RuntimeError(f"no trajectory contains {length} transitions")
 
-        episodes = [
-            candidates[i] for i in self.rng.integers(len(candidates), size=batch_size)
-        ]
-        ends = np.array(
-            [
-                self.rng.integers(min_sequence_length, len(episode))
-                for episode in episodes
-            ]
-        )
-        length = min(
-            int(self.rng.integers(min_sequence_length, ends.min() + 1)),
-            max_sequence_length,
-        )
-        sequences = [
-            episode[end - length : end] for episode, end in zip(episodes, ends)
-        ]
+        windows = []
+        for index in self.rng.integers(len(candidates), size=batch_size):
+            episode = candidates[index]
+            start = int(self.rng.integers(len(episode) - length + 1))
+            windows.append(episode[start : start + length])
 
         return SequenceBatch(
-            *[
-                np.asarray(
-                    [[step[field] for step in sequence] for sequence in sequences],
-                    dtype=np.float32,
-                )
-                for field in range(4)
-            ]
+            states=np.asarray(
+                [[step[0] for step in window] + [window[-1][3]] for window in windows],
+                dtype=np.float32,
+            ),
+            actions=np.asarray(
+                [[step[1] for step in window] for window in windows],
+                dtype=np.float32,
+            ),
+            rewards=np.asarray(
+                [[step[2] for step in window] for window in windows],
+                dtype=np.float32,
+            ),
+            times=np.asarray(
+                [[step[4] for step in window] + [window[-1][5]] for window in windows],
+                dtype=np.float32,
+            ),
         )
 
     def sample_terminals(self, batch_size: int) -> TerminalBatch:
