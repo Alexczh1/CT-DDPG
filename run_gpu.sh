@@ -5,7 +5,7 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$repo_dir"
 
 seed="${1:-0}"
-output="${2:-runs/halfcheetah-paper-seed${seed}}"
+output="${2:-runs/halfcheetah-seed${seed}}"
 
 if [[ ! "$seed" =~ ^[0-9]+$ ]]; then
   echo "seed must be a non-negative integer" >&2
