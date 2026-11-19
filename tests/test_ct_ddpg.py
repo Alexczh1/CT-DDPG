@@ -52,6 +52,33 @@ class CTDDPGTests(unittest.TestCase):
         self.assertGreater(early_batch.states.shape[0], 0)
         self.assertLess(early_batch.states.shape[0], 128)
 
+    def test_terminal_history_survives_trajectory_eviction(self) -> None:
+        buffer = SequenceBuffer(100, 8, np.random.default_rng(0))
+        for episode in range(100):
+            states = np.repeat(
+                np.arange(episode * 8, (episode + 1) * 8, dtype=np.float32)[:, None],
+                3,
+                axis=1,
+            )
+            buffer.start_rollout()
+            buffer.add(
+                states,
+                np.zeros((8, 2), dtype=np.float32),
+                np.zeros(8),
+                np.zeros((8, 1)),
+            )
+            buffer.finish(states, np.zeros(8), np.ones((8, 1)))
+
+        self.assertEqual(len(buffer.episodes), 100)
+        self.assertEqual(len(buffer.terminals), 800)
+        np.testing.assert_array_equal(buffer.terminals[0][0], np.zeros(3))
+        np.testing.assert_array_equal(buffer.terminals[-1][0], np.full(3, 799))
+        batch = buffer.sample_terminals(256)
+        self.assertEqual(batch.states.shape, (256, 3))
+        self.assertEqual(batch.rewards.shape, (256,))
+        self.assertEqual(batch.times.shape, (256, 1))
+        self.assertTrue(np.any(batch.states[:, 0] < 700))
+
     def test_training_hyperparameters(self) -> None:
         config = CTDDPGConfig()
         self.assertEqual(

@@ -25,9 +25,7 @@ class TerminalBatch(NamedTuple):
 class SequenceBuffer:
     def __init__(self, capacity: int, num_envs: int, rng: np.random.Generator) -> None:
         self.episodes: deque[list[Step]] = deque(maxlen=capacity)
-        self.terminals: deque[tuple[np.ndarray, float, np.ndarray]] = deque(
-            maxlen=capacity
-        )
+        self.terminals: list[tuple[np.ndarray, float, np.ndarray]] = []
         self.num_envs = num_envs
         self.rng = rng
         self.active: list[list[Step]] = []

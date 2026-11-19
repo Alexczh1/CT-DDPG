@@ -30,6 +30,8 @@ to every network through sine and cosine features.
 Replay sampling also preserves the source behavior: trajectory indices are
 drawn before short active trajectories are discarded, so batches at the start
 of an episode can contain fewer than the requested number of sequences.
+Terminal states are retained for the entire run and sampled separately for
+the terminal-value penalty.
 
 ## Installation
 
