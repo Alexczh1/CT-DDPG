@@ -41,62 +41,26 @@ python -m pip install -r requirements.txt
 The MuJoCo Python bindings are installed through `gymnasium[mujoco]`; no
 separate MuJoCo download is required.
 
-## HalfCheetah experiment
+## Training
 
-Run the default HalfCheetah configuration on one CUDA GPU:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 ./run_gpu.sh 0
-```
-
-The first argument is the seed. The optional second argument is a fresh output
-directory:
+Run any of the four supported tasks on a CUDA GPU:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 ./run_gpu.sh 42 runs/halfcheetah-seed42
-```
-
-The launcher checks CUDA availability and refuses to reuse an existing output
-path.
-
-Evaluation reports the continuous-time return `sum(h * reward)`.
-
-Each run writes:
-
-```text
-runs/halfcheetah-seed0/
-├── checkpoint.pt
-├── config.json
-└── history.json
-```
-
-To inspect the available launcher overrides:
-
-```bash
-python train_halfcheetah.py --help
-```
-
-## Hopper, Walker2d, and Pendulum
-
-Select an environment with the shared training entry point:
-
-```bash
+python train.py --env halfcheetah --device cuda --seed 0
 python train.py --env hopper --device cuda --seed 0
 python train.py --env walker2d --device cuda --seed 0
 python train.py --env pendulum --device cuda --seed 0
 ```
 
-The GPU shell launcher accepts the environment as its third argument:
-
-```bash
-./run_gpu.sh 0 runs/hopper-seed0 hopper
-```
-
-Each run records its configuration in `config.json`. To view available options:
+Use `--device cpu` to run on CPU. To view available options:
 
 ```bash
 python train.py --help
 ```
+
+Each run saves `checkpoint.pt`, `config.json`, and `history.json` under
+`runs/<environment>-seed<seed>/`. Evaluation reports the continuous-time return
+`sum(h * reward)`.
 
 ## Tests
 
