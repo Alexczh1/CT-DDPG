@@ -61,9 +61,7 @@ CUDA_VISIBLE_DEVICES=0 ./run_gpu.sh 42 runs/halfcheetah-seed42
 ```
 
 The launcher checks CUDA availability and refuses to reuse an existing output
-path. The network, optimizer, vectorization, and environment defaults follow
-Section 5.2 of the paper; discounting retains the source-code behavior noted
-above. The main experiment settings are:
+path. It uses the following HalfCheetah settings:
 
 | Setting | Value |
 |---|---:|
