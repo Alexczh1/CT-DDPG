@@ -1,7 +1,7 @@
 # CT-DDPG
 
 A minimal implementation of continuous-time Deep Deterministic Policy Gradient
-(CT-DDPG), with a reproducible `HalfCheetah-v5` example.
+(CT-DDPG), with HalfCheetah, Hopper, Walker2d, and Pendulum examples.
 
 Paper: [Deterministic Policy Gradient for Reinforcement Learning with Continuous
 Time and State](https://arxiv.org/pdf/2509.23711) — Ziheng Cheng, Xin Guo, and
@@ -102,6 +102,69 @@ To inspect the available launcher overrides:
 python train_halfcheetah.py --help
 ```
 
+## Hopper, Walker2d, and Pendulum
+
+Select an environment with the shared training entry point:
+
+```bash
+python train.py --env hopper --device cuda --seed 0
+python train.py --env walker2d --device cuda --seed 0
+python train.py --env pendulum --device cuda --seed 0
+```
+
+The new task defaults follow the current
+`configs/<task>/ddpg_continuous_online_seq_<task>.yml` settings in
+`ddpg_continuous`:
+
+| Setting | Hopper | Walker2d | Pendulum |
+|---|---:|---:|---:|
+| Time step `h` | 0.0008 | 0.0004 | 0.005 |
+| Horizon | 8 | 8 | 10 |
+| Dynamic noise SD | 0.1 | 1.0 | 1.0 |
+| Episodes | 200 | 200 | 100 |
+| Parallel training environments | 8 | 8 | 8 |
+| Update frequency in environment steps | 5 | 10 | 5 |
+| Hidden width | 400 | 400 | 64 |
+| Actor learning rate | `3e-4` | `3e-4` | `3e-3` |
+| Value / advantage-rate learning rate | `3e-4` | `3e-4` | `3e-2` |
+| Replay capacity in trajectories | 1,000 | 1,000 | 100 |
+| Critic stored sequence length | 2–10 | 2–10 | 10–100 |
+| Actor maximum stored sequence length | 10 | 10 | 10 |
+| LR decay interval / multiplier | 20,000 / 0.8 | 20,000 / 1.0 | 50,000 / 1.0 |
+| Terminal constraint weight | 0.001 | 0.001 | 0.001 |
+| Evaluation interval in episodes | 2 | 2 | 2 |
+| Evaluation rollouts per environment | 2 | 1 | 2 |
+
+Hopper and Walker2d use the Gymnasium v5 environments with
+`terminate_when_unhealthy=False` and end at the configured horizon. Gaussian
+forces are applied through MuJoCo's `qfrc_applied` at each environment step.
+Pendulum uses the source repository's custom equations of motion, torque and
+speed clipping, and Gaussian velocity noise with scale `noise_std * sqrt(h)`.
+
+All tasks supply normalized time to the networks and use `sum(h * reward)` for
+evaluation. `--noise-std` controls dynamics noise; `--exploration-noise` controls
+the noise added to the actor's actions. The existing `--force-noise-std` name
+remains available as an alias.
+
+Individual settings can be overridden. Pendulum's value and advantage-rate
+learning rates can be set with `--value-learning-rate` and
+`--q-learning-rate`. For example, run Hopper with its standard time step
+and zero dynamics noise:
+
+```bash
+python train.py --env hopper --device cuda --dt 0.008 --noise-std 0.0
+```
+
+The GPU shell launcher accepts the environment as its third argument:
+
+```bash
+./run_gpu.sh 0 runs/hopper-seed0 hopper
+```
+
+Each run records the resolved environment and training settings in
+`config.json`. `python train_halfcheetah.py` and `./run_gpu.sh 0` continue to
+launch HalfCheetah with their existing defaults.
+
 ## Tests
 
 ```bash
@@ -117,10 +180,11 @@ discounting, default hyperparameters, and finite critic/policy updates.
 ct_ddpg/
 ├── algorithm.py       # CT-DDPG updates and training loop
 ├── buffer.py          # online episode-sequence replay
-├── envs.py            # continuous-time HalfCheetah wrapper
+├── envs.py            # continuous-time robotic task environments
 └── networks.py        # policy, value, and action-value-rate networks
 run_gpu.sh             # reproducible CUDA launcher
-train_halfcheetah.py   # command-line training entry point
+train.py              # shared command-line training entry point
+train_halfcheetah.py   # HalfCheetah entry point
 requirements.txt       # runtime dependencies
 tests/                 # unit tests
 ```

@@ -1,6 +1,7 @@
 """CT-DDPG with online trajectory-sequence updates."""
 
 import json
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -31,6 +32,10 @@ class CTDDPGConfig:
     terminal_loss_weight: float = 0.002
     hidden_dim: int = 400
     layers: int = 2
+    policy_learning_rate: float | None = None
+    value_learning_rate: float | None = None
+    q_learning_rate: float | None = None
+    max_policy_sequence_length: int | None = None
 
     def __post_init__(self) -> None:
         if self.dt <= 0 or not 0 < self.discount_factor <= 1:
@@ -52,6 +57,20 @@ class CTDDPGConfig:
             )
         if not 0 < self.lr_decay_gamma <= 1:
             raise ValueError("lr_decay_gamma must be in (0, 1]")
+
+        for rate in (
+            self.learning_rate,
+            self.policy_learning_rate,
+            self.value_learning_rate,
+            self.q_learning_rate,
+        ):
+            if rate is not None and (not math.isfinite(rate) or rate <= 0):
+                raise ValueError("learning rates must be finite and positive")
+        if (
+            self.max_policy_sequence_length is not None
+            and self.max_policy_sequence_length <= 0
+        ):
+            raise ValueError("max_policy_sequence_length must be positive")
 
 
 class CTDDPG:
@@ -87,13 +106,22 @@ class CTDDPG:
         )
 
         self.policy_optimizer = torch.optim.Adam(
-            self.policy.parameters(), lr=config.learning_rate
+            self.policy.parameters(),
+            lr=config.learning_rate
+            if config.policy_learning_rate is None
+            else config.policy_learning_rate,
         )
         self.value_optimizer = torch.optim.Adam(
-            self.value.parameters(), lr=config.learning_rate
+            self.value.parameters(),
+            lr=config.learning_rate
+            if config.value_learning_rate is None
+            else config.value_learning_rate,
         )
         self.q_optimizer = torch.optim.Adam(
-            self.q_rate.parameters(), lr=config.learning_rate
+            self.q_rate.parameters(),
+            lr=config.learning_rate
+            if config.q_learning_rate is None
+            else config.q_learning_rate,
         )
         self.policy_scheduler = torch.optim.lr_scheduler.StepLR(
             self.policy_optimizer,
@@ -197,6 +225,9 @@ class CTDDPG:
         updates = 0
         vector_steps = 0
         losses: dict[str, float] = {}
+        policy_sequence_length = self.config.max_policy_sequence_length
+        if policy_sequence_length is None:
+            policy_sequence_length = self.config.max_sequence_length
 
         for episode in range(1, episodes + 1):
             states, info = self.env.reset(seed=self.seed if episode == 1 else None)
@@ -227,7 +258,7 @@ class CTDDPG:
                         critic_batch, buffer.sample_terminals(self.config.batch_size)
                     )
                     policy_batch = buffer.sample(
-                        self.config.batch_size, 1, self.config.max_sequence_length
+                        self.config.batch_size, 1, policy_sequence_length
                     )
                     losses["policy_loss"] = self.update_policy(policy_batch)
                     updates += 1
