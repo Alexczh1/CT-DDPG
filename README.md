@@ -52,6 +52,12 @@ python train.py --env walker2d --device cuda --seed 0
 python train.py --env pendulum --device cuda --seed 0
 ```
 
+Set the discretization step `h` with `--dt` and the dynamics-noise level
+with `--noise-std`. MuJoCo tasks use Gaussian force noise, while
+Pendulum uses velocity noise with scale `noise_std * sqrt(h)`. Set action
+exploration noise separately with `--exploration-noise`. The episode duration
+`--horizon` must be a positive integer multiple of `--dt`.
+
 Use `--device cpu` to run on CPU. To view available options:
 
 ```bash
